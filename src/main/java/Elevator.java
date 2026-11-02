@@ -1,91 +1,76 @@
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Set;"Design an elevator control system for a building. The system should handle multiple elevators, " +
-        "floor requests, and move elevators efficiently to service requests
-
-
-Requirements;
-1. System manages 3 elevators serving 10 floors (0-9)
-2. Users can request an elevator from any floor (hall call). System decides which elevator to dispatch;
-3. Once inside, users can select one or more destination floors
-4. Simulation runs in discrete time steps (e.g., a `step()` or `tick()` call advances time);
-5. Elevator stops come in two types;
-    - Hall calls: Request from a floor with direction (UP or DOWN)
-    - Destination: Request from inside elevator (no direction specified)
-6. System handles multiple concurrent pickup requests across floors;
-
-
-Entity ;
-core action: user send request to elevator, elevator assgign cars, user press button, button has floors;
-on it, car stops
-1. Elevator;
-2. Elevator System;
-3. HallRequest;
-4. CarRequest;
-
-Entity Design;
-1. Elevator System;
-    state;
-        1. List<Elevator> Elevators;
-    action;
-        1. assignHallRequest
-        2. how does system know a carRequest made inside a car? I think the logic is hallRequest is;
-            passed to elevator car, it pickups when it can, if it is available(no carRequest), go there
-            getBestCar()
-        3.
-2. Elevator:
-    state;
-        1. floor;
-        2. List<CarRequest>, elevator really cares about carRequest, hallRequest are for system to assign;
-        3. List<HallRequest>
-        4. destination
-    Action:
-        1. initiateCarRequest;
-        2. two type of stop, one is to stop somewhere to fulfill HallRequest, one is to fulfill carRequest;
-            first one is assigned by the system, the other one is carried out inside elevator;
-            but the system has to know, so lets say stop. basically, a carRequest made inside a car is;
-            prioritized, it only picks up when it can;
-            stop()
-        3. isAvailable()；
-
-
+import java.util.Set;
 
 
 public class Elevator {
+
+    public static void main(String[] args) {
+
+        ElevatorSystem system = new ElevatorSystem();
+
+        system.assignHallRequest(
+                5,
+                RequestType.HALLREQUEST_UP
+        );
+
+        for (int i = 0; i < 8; i++) {
+            System.out.printf("Step %d%n", i);
+            system.printStatus();
+            system.step();
+        }
+
+        system.printStatus();
+    }
 }
 
-class ElevatorSystem{
+
+class ElevatorSystem {
     private final List<ElevatorCar> elevatorCars;
 
-    public ElevatorSystem(){
+    public ElevatorSystem() {
         elevatorCars = new ArrayList<ElevatorCar>();
         elevatorCars.add(new ElevatorCar());
         elevatorCars.add(new ElevatorCar());
         elevatorCars.add(new ElevatorCar());
     }
 
-    public boolean assignHallRequest(int floor, RequestType type){
+    public void step() {
+        for (ElevatorCar elevatorCar : elevatorCars) {
+            elevatorCar.step();
+        }
+    }
 
-        if(floor < 0 || floor > 9){
+    public void printStatus() {
+        for (int i = 0; i < elevatorCars.size(); i++) {
+            System.out.printf("Elevator %d: ", i);
+            elevatorCars.get(i).printStatus();
+        }
+    }
+
+    public boolean assignHallRequest(int floor, RequestType type) {
+
+        if (floor < 0 || floor > 9) {
             throw new RuntimeException("Invalid request");
         }
-        if(type == RequestType.ELEVATOR_REQUEST){
+        if (type == RequestType.ELEVATOR_REQUEST) {
             throw new RuntimeException("cannot assign elevator request");
         }
         Request request = new Request(type, floor);
         ElevatorCar bestCar = findBestCar(request);
-        bestCar.requests.add(request);
-        if(bestCar != null){
+
+        if (bestCar == null) {
             return false;
         }
-        return true;
+        return bestCar.addRequest(request);
+
     }
 
-    public ElevatorCar findBestCar(Request request){
+    public ElevatorCar findBestCar(Request request) {
         ElevatorCar bestCar = null;
-        Direction direction = (request.type == RequestType.HALLREQUEST_UP) ? Direction.UP : Direction.DOWN;
-        int floor = request.floor;
+        Direction direction = (request.type() == RequestType.HALLREQUEST_UP) ? Direction.UP : Direction.DOWN;
+        int floor = request.floor();
         int minDist = Integer.MAX_VALUE;
         //pick up along the way
         for (ElevatorCar car : elevatorCars) {
@@ -93,41 +78,41 @@ class ElevatorSystem{
                 continue;
             }
             if ((car.direction == Direction.UP && car.floor > floor)
-            ||(car.direction == Direction.DOWN && car.floor < floor)) {
+                    || (car.direction == Direction.DOWN && car.floor < floor)) {
                 continue;
             }
-            if (!car.hasRequestAtOrBeyond(direction, floor)){
+            if (!car.hasRequestAtOrBeyond(direction, floor)) {
                 continue;
             }
-            int distance = Math.abs(request.floor - car.floor);
+            int distance = Math.abs(request.floor() - car.floor);
             if (distance < minDist) {
                 bestCar = car;
                 minDist = distance;
             }
         }
-        if (bestCar != null){
+        if (bestCar != null) {
             return bestCar;
         }
         //pick up if idle
-        for(ElevatorCar car : elevatorCars){
-            if (car.direction != Direction.IDLE){
+        for (ElevatorCar car : elevatorCars) {
+            if (car.direction != Direction.IDLE) {
                 continue;
             }
-            int distance = Math.abs(request.floor - car.floor);
+            int distance = Math.abs(request.floor() - car.floor);
             if (distance < minDist) {
                 bestCar = car;
                 minDist = distance;
             }
         }
-        if (bestCar != null){
+        if (bestCar != null) {
             return bestCar;
         }
 
         //find the nearest one to pickup
-        for(ElevatorCar car : elevatorCars){
-            int distance = Math.abs(request.floor - car.floor);
+        for (ElevatorCar car : elevatorCars) {
+            int distance = Math.abs(request.floor() - car.floor);
             if (distance < minDist) {
-                minDist = Math.abs(request.floor - car.floor);
+                minDist = Math.abs(request.floor() - car.floor);
                 bestCar = car;
             }
         }
@@ -136,29 +121,42 @@ class ElevatorSystem{
 
 }
 
-class ElevatorCar{
-    private int floor;
+class ElevatorCar {
+    int floor;
     private final Set<Request> requests = new HashSet<>();
-    private Direction direction;
+    Direction direction;
 
-    public ElevatorCar(){
+    public ElevatorCar() {
         floor = 0;
         direction = Direction.IDLE;
     }
 
-    public boolean hasRequestAtOrBeyond(Direction direction, int destination){
-        for(Request request : this.requests){
-            if (direction == Direction.UP){
-                if (request.type == RequestType.HALLREQUEST_UP && request.floor >= destination){
+    public boolean addRequest(Request request) {
+        if (request.floor() < 0 || request.floor() > 9) {
+            return false;
+        }
+        if (request.floor() == floor) {
+            return true;
+        }
+        if (requests.contains(request)) {
+            return false;
+        }
+        return requests.add(request);
+    }
+
+    public boolean hasRequestAtOrBeyond(Direction direction, int destination) {
+        for (Request request : this.requests) {
+            if (direction == Direction.UP) {
+                if (request.type() == RequestType.HALLREQUEST_UP && request.floor() >= destination) {
                     return true;
-                } else if (request.type == RequestType.ELEVATOR_REQUEST && request.floor >= destination){
+                } else if (request.type() == RequestType.ELEVATOR_REQUEST && request.floor() >= destination) {
                     return true;
                 }
             }
-            if (direction == Direction.DOWN){
-                if (request.type == RequestType.HALLREQUEST_DOWN && request.floor <= destination){
+            if (direction == Direction.DOWN) {
+                if (request.type() == RequestType.HALLREQUEST_DOWN && request.floor() <= destination) {
                     return true;
-                } else if (request.type == RequestType.ELEVATOR_REQUEST && request.floor <= destination){
+                } else if (request.type() == RequestType.ELEVATOR_REQUEST && request.floor() <= destination) {
                     return true;
                 }
             }
@@ -166,25 +164,82 @@ class ElevatorCar{
         return false;
     }
 
-}
+    //elevator car simulation tick by tick
+    public void step() {
+        if (requests.isEmpty()) {
+            direction = Direction.IDLE;
+            return;
+        }
 
-class Request{
-    private final RequestType type;
-    private int floor;
+        //find initial direction
+        if (direction == Direction.IDLE) {
+            int minDist = Integer.MAX_VALUE;
+            Request nearestTask = null;
+            for (Request request : requests) {
+                int distance = Math.abs(request.floor() - floor);
+                if (distance < minDist) {
+                    minDist = distance;
+                    nearestTask = request;
+                }
+            }
+            direction = (nearestTask.floor() < floor) ? Direction.DOWN : Direction.UP;
+        }
+        //drop off
+        RequestType pickupType = (direction == Direction.UP) ? RequestType.HALLREQUEST_UP : RequestType.HALLREQUEST_DOWN;
+        Request pickupRequest = new Request(pickupType, floor);
+        Request elevatorRequest = new Request(RequestType.ELEVATOR_REQUEST, floor);
+        if (requests.contains(pickupRequest) || requests.contains(elevatorRequest)) {
+            requests.remove(pickupRequest);
+            requests.remove(elevatorRequest);
+            if (requests.isEmpty()) {
+                direction = Direction.IDLE;
 
-    public Request(RequestType type, int floor){
-        this.type = type;
-        this.floor = floor;
+            }
+            return;
+        }
+        //turn around if needed
+        boolean requestAhead = false;
+        for (Request request : requests) {
+            if (direction == Direction.UP && request.floor() > floor) {
+                requestAhead = true;
+                break;
+            } else if (direction == Direction.DOWN && request.floor() < floor) {
+                requestAhead = true;
+                break;
+            }
+        }
+        if (!requestAhead) {
+            direction = (direction == Direction.UP) ? Direction.DOWN : Direction.UP;
+            return;
+        }
+        //update current floor
+        if (direction == Direction.UP) {
+            floor++;
+        }
+        if (direction == Direction.DOWN) {
+            floor--;
+        }
     }
+
+    public void printStatus() {
+        System.out.printf(
+                "Floor=%d, Direction=%s, Requests=%s%n",
+                floor, direction, requests
+        );
+    }
+
 }
 
-enum RequestType{
-   HALLREQUEST_UP,
-   HALLREQUEST_DOWN,
-   ELEVATOR_REQUEST,
+record Request(RequestType type, int floor) {
 }
 
-enum Direction{
+enum RequestType {
+    HALLREQUEST_UP,
+    HALLREQUEST_DOWN,
+    ELEVATOR_REQUEST,
+}
+
+enum Direction {
     UP,
     DOWN,
     IDLE,
