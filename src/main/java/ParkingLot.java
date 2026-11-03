@@ -1,51 +1,52 @@
 import java.time.Duration;
 import java.time.Instant;
-import java.util.*;"Design a parking lot system where different types of vehicles " +
-        "can park, and the system manages spot assignment and calculates fees upon exit."
-
-
-
-Requirement:
-1. match available spot;
-    3 different of vehicle
-    reject entry if full
-2. pricing system:
-        hourly rate, round up to nearest hour,
-        pay when leave;
-3. ticket system:
-    issue ticket;
-    reject invalid ticket;
-
-Entity:
-    1. Parking System:
-        ParkingLot;
-        ParkingSpot;
-        Vehicle;
-    2. Pricing System:
-    3. Ticketing:
-        Ticket;
-
-Entity:
-    1. ParkingSystem:
-        -List<ParkingSpot>
-        -List<Ticket>
-        boolean park(vehicle);
-        parkingSpot findAvailable(vehicleSize);
-        ticket issueTicket(vehicle, parkingSpot);
-        boolean exit(Ticket)
-        double calculateFee(Ticket);
-    2. parkingSpot:
-        -size
-        -ID
-
-    3. Ticket:
-        -id
-        -issuedTime
-        -parkingSpotID
-    4. Vehicle:
-        -id
-        -size
-
+import java.util.*;
+// "Design a parking lot system where different types of vehicles " +
+//        "can park, and the system manages spot assignment and calculates fees upon exit."
+//
+//
+//
+//Requirement:
+//1. match available spot;
+//    3 different of vehicle
+//    reject entry if full
+//2. pricing system:
+//        hourly rate, round up to nearest hour,
+//        pay when leave;
+//3. ticket system:
+//    issue ticket;
+//    reject invalid ticket;
+//
+//Entity:
+//    1. Parking System:
+//        ParkingLot;
+//        ParkingSpot;
+//        Vehicle;
+//    2. Pricing System:
+//    3. Ticketing:
+//        Ticket;
+//
+//Entity:
+//    1. ParkingSystem:
+//        -List<ParkingSpot>
+//        -List<Ticket>
+//        boolean park(vehicle);
+//        parkingSpot findAvailable(vehicleSize);
+//        ticket issueTicket(vehicle, parkingSpot);
+//        boolean exit(Ticket)
+//        double calculateFee(Ticket);
+//    2. parkingSpot:
+//        -size
+//        -ID
+//
+//    3. Ticket:
+//        -id
+//        -issuedTime
+//        -parkingSpotID
+//    4. Vehicle:
+//        -id
+//        -size
+//
 
 
 
@@ -59,10 +60,11 @@ class ParkingSystem{
         private final Map<String, Ticket> idToTicket = new HashMap<>();
         private long hourlyRateCents;
 
-        public ParkingSystem(List<ParkingSpot> parkingSpots) {
+        public ParkingSystem(List<ParkingSpot> parkingSpots, long hourlyRateCents) {
             this.parkingSpots = parkingSpots;
+            this.hourlyRateCents = hourlyRateCents;
         }
-        boolean park(Vehicle vehicle){
+        Ticket park(Vehicle vehicle){
             //find availability
             ParkingSpot parkingSpot = findAvailable(vehicle);
             if (parkingSpot == null) {
@@ -77,12 +79,12 @@ class ParkingSystem{
             //update states->park the car
             occupiedSpotId.add(parkingSpot.getId());
             idToTicket.put(ticketId, issuedTicket);
-            return true;
+            return issuedTicket;
 
         }
         ParkingSpot findAvailable(Vehicle vehicle){
             for(ParkingSpot spot : parkingSpots){
-                if (spot.getSize() == vehicle.size && !occupiedSpotId.contains(spot.getId())){
+                if (spot.getSize() == vehicle.getSize() && !occupiedSpotId.contains(spot.getId())){
                     return spot;
                 }
             }
@@ -93,7 +95,7 @@ class ParkingSystem{
             return new Ticket(ticketId,parkingSpot.getId(), now, vehicle.getMake());
         }
 
-        public boolean exit(String ticketId){
+        public long exit(String ticketId){
             //scan ticket
             //validate ticket
             if (!idToTicket.containsKey(ticketId)){
@@ -101,13 +103,17 @@ class ParkingSystem{
             }
             Ticket ticket = idToTicket.get(ticketId);
             //calculate fee
+            long feeInCents = calculatefee(ticket);
             //free the space
             //update source of truth
+            occupiedSpotId.remove(ticket.getSpotId());
+            idToTicket.remove(ticketId);
+            return feeInCents;
         }
         public long calculatefee(Ticket ticket){
             Duration duration = Duration.between(
-                    Instant.now(),
-                    ticket.issuedTime
+                    ticket.getIssuedTime(),
+                    Instant.now()
             );
 
             long durationMillis = duration.toMillis();
@@ -152,6 +158,9 @@ class Ticket{
         }
         public String getMake() {
             return make;
+        }
+        public String getId() {
+            return id;
         }
 
 }
