@@ -55,6 +55,35 @@ public class FileSystem {
 
     }
 
+    public static void main(String[] args) {
+        FileSystem fileSystem = new FileSystem();
+        //createFolder
+        fileSystem.createFolder("/photo");
+        fileSystem.createFolder("/photo");
+        fileSystem.createFolder("/movie");
+        fileSystem.createFolder("/document");
+        fileSystem.createFolder("/photo/2025");
+        fileSystem.createFolder("/photo/2025/2025_May");
+        fileSystem.createFolder("/photo/2025/2025_April");
+        //createfile
+        fileSystem.createFile("/photo/2025/2025_April/photoList.txt");
+        fileSystem.list("/photo/2025/2025_April");
+        //move
+        fileSystem.move("/photo/2025/2025_April/photoList.txt", "/photo/2025/2025_May");
+        fileSystem.list("/photo/2025/2025_May");
+//        fileSystem.move("/photo/2025", "/photo/2025/2025_May");
+//        fileSystem.move("/photo/2025/2025_May", "/photo/2025/2025_May");
+        //delete
+//        fileSystem.delete("/photo/2025/2025_April/photoList.txt");
+        fileSystem.delete("/photo/2025/2025_May/photoList.txt");
+        fileSystem.list("/photo/2025/2025_May");
+        //rename
+        fileSystem.rename("/photo/2025/2025_May", "2025_June");
+        fileSystem.list("/photo/2025/");
+//        fileSystem.rename("/photo/2025/2025_June", "2025_June");
+
+    }
+
     public boolean createFile(String path) {
         //validate fileName
         String fileName = resolveEntityName(path);
@@ -143,13 +172,24 @@ public class FileSystem {
         FileSystemEntity target = parentFolder.getChild(targetName);
         parentFolder.renameChild(target, newName);
 
-
     }
 
     public List<String> list(String path){
         Folder targetFolder = navigatePath(path);
-        return targetFolder.listChildren();
+        List<String> list =  targetFolder.listChildren();
+        System.out.println(list);
+        return list;
+    }
 
+    public void writeFile(String path, String content){
+        String fileName = resolveEntityName(path);
+        String parentPath = resolveParentPath(path);
+        Folder targetFolder = navigatePath(parentPath);
+        FileSystemEntity entity = targetFolder.getChild(fileName);
+        if (!(entity instanceof File)){
+            throw new RuntimeException("file is not a file");
+        }
+        entity.setName(content);
     }
 
 
@@ -238,6 +278,10 @@ class File implements FileSystemEntity {
     @Override
     public boolean isDirectory() {
         return false;
+    }
+
+    public void setContent(String content) {
+        this.content = content;
     }
 }
 
