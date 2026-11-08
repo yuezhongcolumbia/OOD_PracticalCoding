@@ -1,22 +1,23 @@
 import java.time.LocalDateTime;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
-{
-        "endpoint":"/search",
-        "algorithm":"TokenBucket",
-        "algoConfig":{
-        "capacity":1000,
-        "refillRatePerSecond":10
-        }
-        }
-
-
-        1.factory design;
-2.
-rate liming
-algo;TokenBucketLimiter,SlidingWindowLogLimiter ..;
-        3.
-handle concurrency;
+//{
+//        "endpoint":"/search",
+//        "algorithm":"TokenBucket",
+//        "algoConfig":{
+//        "capacity":1000,
+//        "refillRatePerSecond":10
+//        }
+//        }
+//
+//
+//        1.factory design;
+//2.
+//rate liming
+//algo;TokenBucketLimiter,SlidingWindowLogLimiter ..;
+//        3.
+//handle concurrency;
 
 
 public class RateLimiterOOD {
@@ -46,10 +47,25 @@ class RateLimiter {
         return limiter.allow(userId);
     }
 
+    public void updateEndPointConfig(List<Map<String, Object>> configs, Map<String, Object> defaultConfig){
+        for(Map<String, Object> config : configs){
+            String endPoint = (String) config.get("endpoint");
+            Map<String, Object> newConfig = (Map<String, Object>) config.get("algoConfig");
+            if (endPointToLimiter.containsKey(endPoint)) {
+                Limiter limiter = endPointToLimiter.get(endPoint);
+                limiter.updateConfig(newConfig);
+            } else {
+                LimiterFactory limiterFactory = new LimiterFactory();
+                endPointToLimiter.put(endPoint, limiterFactory.createLimiter(config));
+            }
+        }
+    }
+
 }
 
 interface Limiter {
-    public RateLimitResult allow(String algo);
+    public RateLimitResult allow(String userId);
+    public void updateConfig(Map<String, Object> config);
 }
 
 class TokenBucketLimiter implements Limiter {
@@ -63,31 +79,36 @@ class TokenBucketLimiter implements Limiter {
         }
     }
 
-    private final int capacity;
-    private final int refillRatePerSecond;
-    private final Map<String, TokenBucket> userBuckets = new HashMap<>();
+    private  int capacity;
+    private  int refillRatePerSecond;
+    private final ConcurrentHashMap<String, TokenBucket> userBuckets = new ConcurrentHashMap<>();
 
     public TokenBucketLimiter(int capacity, int refillRatePerSecond) {
         this.capacity = capacity;
         this.refillRatePerSecond = refillRatePerSecond;
     }
-
+    @Override
     public RateLimitResult allow(String userId) {
         //create or get from map
         long now = System.currentTimeMillis();
         TokenBucket tokenBucket = userBuckets.computeIfAbsent(userId, k -> new TokenBucket(capacity, now));
-        //refill logic if needed
-        refill(tokenBucket, now);
-        // consume token
-        if (tokenBucket.tokens >= 1) {
-            tokenBucket.tokens--;
-            long remainingToken = (long) Math.floor(tokenBucket.tokens);
-            return new RateLimitResult(true, remainingToken, null);
+
+        synchronized (tokenBucket) {
+            //refill logic if needed
+            refill(tokenBucket, now);
+            // consume token
+            if (tokenBucket.tokens >= 1) {
+                tokenBucket.tokens--;
+                long remainingToken = (long) Math.floor(tokenBucket.tokens);
+                return new RateLimitResult(true, remainingToken, null);
+            }
+            //if failed figure out retry
+            double tokenNeeded = 1 - tokenBucket.tokens;
+            long timeToRefill = (long) Math.ceil(tokenNeeded / refillRatePerSecond * 1000);
+            return new RateLimitResult(false, 0L, timeToRefill);
         }
-        //if failed figure out retry
-        double tokenNeeded = 1 - tokenBucket.tokens;
-        long timeToRefill = (long) Math.ceil(tokenNeeded / refillRatePerSecond * 1000);
-        return new RateLimitResult(false, 0L, timeToRefill);
+
+
 
     }
 
@@ -97,6 +118,19 @@ class TokenBucketLimiter implements Limiter {
             double refill = elapsedTimeinSeconds * refillRatePerSecond;
             tokenBucket.tokens = Math.min(capacity, tokenBucket.tokens + refill);
             tokenBucket.lastRefilledTime = now;
+        }
+    }
+    @Override
+    public void updateConfig(Map<String, Object> config) {
+        int newMaxCapacity = (Integer) config.get("capacity");
+        int newRefillRatePerSecond = (Integer) config.get("refillRatePerSecond");
+
+        this.refillRatePerSecond = newRefillRatePerSecond;
+        this.capacity = newMaxCapacity;
+        for(TokenBucket tokenBucket : userBuckets.values()) {
+            if (tokenBucket.tokens > newMaxCapacity) {
+                tokenBucket.tokens = newMaxCapacity;
+            }
         }
     }
 }
@@ -109,13 +143,13 @@ class SlidingWindowLogLimiter implements Limiter {
 
     private final int maxRequests;
     private final long windowMs;
-    private final Map<String, RequestLog> requestLogs = new HashMap<>();
+    private final ConcurrentHashMap<String, RequestLog> requestLogs = new ConcurrentHashMap<>();
 
     public SlidingWindowLogLimiter(int maxRequests, long windowMs) {
         this.maxRequests = maxRequests;
         this.windowMs = windowMs;
     }
-
+    @Override
     public RateLimitResult allow(String userId) {
 //        10:01 10:02 10:03
 //                window = 30ms
@@ -123,22 +157,30 @@ class SlidingWindowLogLimiter implements Limiter {
 //        how to calculate retry time?
         //create or get
         RequestLog requestLog = requestLogs.computeIfAbsent(userId, k -> new RequestLog());
-        //evict stale logs
-        long now = System.currentTimeMillis();
-        long cutoff = now - windowMs;
-        Queue<Long> log = requestLog.log;
-        while (!log.isEmpty() && log.peek() <= cutoff){
-            requestLog.log.poll();
+        synchronized (requestLog) {
+            //evict stale logs
+            long now = System.currentTimeMillis();
+            long cutoff = now - windowMs;
+            Queue<Long> log = requestLog.log;
+            while (!log.isEmpty() && log.peek() <= cutoff){
+                requestLog.log.poll();
+            }
+            //enqueue
+            if (log.size() < maxRequests) {
+                log.offer(now);
+                long remaining = (long)(maxRequests - log.size());
+                return new RateLimitResult(true, remaining, null);
+            }
+            //if not calculate retry time
+            long retryInMs = log.peek() + windowMs - now;
+            return new RateLimitResult(false, 0L, retryInMs);
         }
-        //enqueue
-        if (log.size() < maxRequests) {
-            log.offer(now);
-            long remaining = (long)(maxRequests - log.size());
-            return new RateLimitResult(true, remaining, null);
-        }
-        //if not calculate retry time
-        long retryInMs = log.peek() + windowMs - now;
-        return new RateLimitResult(false, 0L, retryInMs);
+
+
+    }
+
+    @Override
+    public void updateConfig(Map<String, Object> config) {
 
     }
 }
@@ -149,7 +191,7 @@ class LimiterFactory {
             throw new IllegalArgumentException("config is null");
         }
         String algo = (String) config.get("algorithm");
-        Map<String, Object> algoConfig = (Map<String, Object>) config.get("algoConfig"));
+        Map<String, Object> algoConfig = (Map<String, Object>) config.get("algoConfig");
 
         if (algo.equals("TokenBucket")) {
             int capacity = (Integer) algoConfig.getOrDefault("capacity", 0);
