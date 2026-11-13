@@ -70,31 +70,41 @@ public class LoggingSystemOOD {
         //Testing
         MemorySink sink = new MemorySink();
 
-        Destination destination = new Destination(sink, new PlainTextFormatter(), LogLevel.DEBUG, 1000);
+        Destination destination = new Destination(
+                sink,
+                new PlainTextFormatter(),
+                LogLevel.DEBUG,
+                1000
+        );
 
         Logger loggerB = new Logger(List.of(destination));
 
-        List<Thread> threads = new ArrayList<>();
+// 创建包含 10 个线程的线程池
+        ExecutorService executor = Executors.newFixedThreadPool(10);
 
+// 提交 10 个任务
         for (int i = 0; i < 10; i++) {
             int id = i;
 
-            Thread t = new Thread(() -> {
+            executor.submit(() -> {
                 for (int j = 0; j < 100; j++) {
-                    loggerB.log("Thread-" + id + "-Log-" + j, LogLevel.INFO);
+                    loggerB.log(
+                            "Thread-" + id + "-Log-" + j,
+                            LogLevel.INFO
+                    );
                 }
             });
-
-            threads.add(t);
-            t.start();
         }
 
-// 等所有 Producer 提交完
-        for (Thread t : threads) {
-            t.join();
+// 不再接受新的任务
+        executor.shutdown();
+
+// 等待所有 Producer 执行结束
+        if (!executor.awaitTermination(30, TimeUnit.SECONDS)) {
+            throw new IllegalStateException("Producers did not finish");
         }
 
-// 等 Worker 消费完 Queue
+// 等待 Destination 的 Worker 排空 Queue
         destination.close();
 
         System.out.println("Expected: 1000");
@@ -163,6 +173,9 @@ class Destination implements AutoCloseable {
 
             try {
                 Log log = queue.poll(100, TimeUnit.MILLISECONDS);
+                if (log == null) {
+                    continue;
+                }
                 String formatted = formatter.format(log);
                 sink.write(formatted);
             } catch (InterruptedException e) {
